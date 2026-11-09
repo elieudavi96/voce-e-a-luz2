@@ -1,0 +1,357 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#07040c">
+<title>Você é a Luz</title>
+<style>
+  :root {
+    --bg1: #1a0a1f; --bg2: #07040c;
+    --accent: #ffb3c8; --accent-strong: #ff4f86;
+    --text: #fbe9ef; --text-dim: #b9a0ad;
+    --glass: rgba(255,255,255,0.07); --glass-line: rgba(255,179,200,0.35);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) { --bg1: #1a0a1f; --bg2: #07040c; }
+  }
+  :root[data-theme="dark"] { --bg1: #1a0a1f; --bg2: #07040c; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: radial-gradient(ellipse at 50% 40%, var(--bg1) 0%, var(--bg2) 70%);
+    color: var(--text);
+    font-family: -apple-system, "SF Pro Text", "Segoe UI", Inter, sans-serif;
+    -webkit-user-select: none; user-select: none;
+  }
+  #stage { position: fixed; inset: 0; }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none; }
+  #glow {
+    position: fixed; left: 50%; top: 48%; width: 125vmin; height: 125vmin;
+    transform: translate(-50%, -50%); border-radius: 50%; pointer-events: none; opacity: .3;
+    background: radial-gradient(circle, rgba(255,79,134,.38) 0%, rgba(255,79,134,.12) 35%, rgba(255,79,134,0) 65%);
+  }
+  #top {
+    position: fixed; left: 0; right: 0; top: 0;
+    padding: calc(env(safe-area-inset-top, 0px) + 18px) 20px 0;
+    text-align: center; pointer-events: none;
+    font-family: Georgia, "Times New Roman", serif; font-style: italic;
+    font-size: 15px; letter-spacing: 0.3em; color: var(--accent); text-shadow: 0 0 18px rgba(255,79,134,.6);
+    text-transform: lowercase;
+  }
+  #controls {
+    position: fixed; left: 0; right: 0; bottom: 0;
+    padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 22px);
+    display: flex; justify-content: center;
+  }
+  .seg {
+    display: flex; gap: 4px; padding: 4px; border-radius: 999px;
+    background: var(--glass); border: 1px solid var(--glass-line);
+    -webkit-backdrop-filter: blur(14px); backdrop-filter: blur(14px);
+  }
+  button {
+    font: inherit; font-size: 13px; letter-spacing: 0.06em;
+    min-height: 44px; padding: 0 18px; border: 0; border-radius: 999px;
+    background: transparent; color: var(--text-dim); cursor: pointer;
+    transition: background .25s, color .25s;
+  }
+  button.on { background: var(--accent); color: #3a0a1c; font-weight: 600; }
+  #hint {
+    position: fixed; left: 0; right: 0;
+    bottom: calc(env(safe-area-inset-bottom, 0px) + 84px);
+    text-align: center; font-size: 11px; letter-spacing: 0.12em;
+    color: var(--text-dim); opacity: .7; pointer-events: none;
+    transition: opacity 1.2s;
+  }
+</style>
+</head>
+<body>
+<div id="glow"></div>
+<div id="stage"></div>
+<div id="top">para você</div>
+<div id="hint">arraste para girar</div>
+<div id="controls">
+  <div class="seg">
+    <button id="bHeart" class="on">Coração</button>
+    <button id="bText">Frase</button>
+    <button id="bScatter">Espalhar</button>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function () {
+  var PHRASE = ["Você é a Luz", "que ilumina", "meu caminho"];
+  var mobile = window.matchMedia("(pointer: coarse)").matches;
+  var N = mobile ? 4200 : 6500;
+  var stage = document.getElementById("stage");
+
+  if (!window.THREE) { stage.textContent = "Não foi possível carregar a animação."; return; }
+
+  // ---------- targets ----------
+  function heartTargets() {
+    var out = new Float32Array(N * 3), i = 0, S = 150;
+    while (i < N) {
+      var x = Math.random() * 2.6 - 1.3, y = Math.random() * 1.6 - 0.8, z = Math.random() * 2.7 - 1.3;
+      var a = x * x + 2.25 * y * y + z * z - 1;
+      var f = a * a * a - x * x * z * z * z - 0.1125 * y * y * z * z * z;
+      if (f < 0) {
+        out[i * 3] = x * S;
+        out[i * 3 + 1] = (z - 0.1) * S;
+        out[i * 3 + 2] = y * S * 1.5;
+        i++;
+      }
+    }
+    return out;
+  }
+
+  function textTargets() {
+    var W = 800, H = 560, c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    var g = c.getContext("2d");
+    g.fillStyle = "#fff"; g.textAlign = "center"; g.textBaseline = "middle";
+    g.font = "italic 700 124px Georgia, 'Times New Roman', serif";
+    for (var l = 0; l < PHRASE.length; l++) g.fillText(PHRASE[l], W / 2, H / 2 + (l - 1) * 150);
+    var d = g.getImageData(0, 0, W, H).data, pts = [];
+    for (var y = 0; y < H; y += 2) for (var x = 0; x < W; x += 2)
+      if (d[(y * W + x) * 4 + 3] > 128) pts.push(x, y);
+    var cnt = pts.length / 2, out = new Float32Array(N * 3), k = 0.6;
+    for (var i = 0; i < N; i++) {
+      var j = Math.floor(Math.random() * cnt);
+      out[i * 3] = (pts[j * 2] - W / 2 + (Math.random() - 0.5) * 2) * k;
+      out[i * 3 + 1] = -(pts[j * 2 + 1] - H / 2 + (Math.random() - 0.5) * 2) * k;
+      out[i * 3 + 2] = (Math.random() - 0.5) * 14;
+    }
+    return out;
+  }
+
+  function scatterTargets() {
+    var out = new Float32Array(N * 3);
+    for (var i = 0; i < N; i++) {
+      var u = Math.random() * 6.2832, v = Math.acos(2 * Math.random() - 1), r = 260 + Math.random() * 360;
+      out[i * 3] = r * Math.sin(v) * Math.cos(u) * 1.1;
+      out[i * 3 + 1] = r * Math.cos(v) * 0.9;
+      out[i * 3 + 2] = r * Math.sin(v) * Math.sin(u);
+    }
+    return out;
+  }
+
+  function colorSet(kind, pos) {
+    var out = new Float32Array(N * 3), c = new THREE.Color(), a, b;
+    if (kind === "heart") { a = new THREE.Color(0xff3d7f); b = new THREE.Color(0xffc2d4); }
+    else if (kind === "text") { a = new THREE.Color(0xffc872); b = new THREE.Color(0xfff3d6); }
+    else { a = new THREE.Color(0xff7aa8); b = new THREE.Color(0xffffff); }
+    for (var i = 0; i < N; i++) {
+      var t = kind === "heart" ? (pos[i * 3 + 1] / 150 + 1) / 2.2 : Math.random();
+      t = Math.min(1, Math.max(0, t + (Math.random() - 0.5) * 0.35));
+      c.copy(a).lerp(b, t);
+      var br = Math.random() < 0.05 ? 1.7 : 0.6 + Math.random() * 0.5;
+      out[i * 3] = c.r * br; out[i * 3 + 1] = c.g * br; out[i * 3 + 2] = c.b * br;
+    }
+    return out;
+  }
+
+  var T = {
+    heart: heartTargets(), text: textTargets(), scatter: scatterTargets()
+  };
+  var C = { heart: colorSet("heart", T.heart), text: colorSet("text"), scatter: colorSet("scatter") };
+
+  // ---------- scene ----------
+  var scene = new THREE.Scene();
+  var camera = new THREE.PerspectiveCamera(50, 1, 10, 4000);
+  var renderer;
+  try {
+    renderer = new THREE.WebGLRenderer({ antialias: !mobile, alpha: true, powerPreference: "high-performance" });
+  } catch (e) { stage.textContent = "Seu navegador não suporta WebGL."; return; }
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+  stage.appendChild(renderer.domElement);
+
+  function sprite() {
+    var c = document.createElement("canvas"); c.width = c.height = 64;
+    var g = c.getContext("2d"), gr = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+    gr.addColorStop(0, "rgba(255,255,255,1)");
+    gr.addColorStop(0.25, "rgba(255,255,255,0.8)");
+    gr.addColorStop(1, "rgba(255,255,255,0)");
+    g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    return new THREE.CanvasTexture(c);
+  }
+  var tex = sprite();
+
+  var cur = new Float32Array(T.scatter), from = new Float32Array(T.scatter), to = T.scatter;
+  var curC = new Float32Array(C.scatter), fromC = new Float32Array(C.scatter), toC = C.scatter;
+  var delay = new Float32Array(N), swirl = new Float32Array(N * 3);
+  for (var i = 0; i < N; i++) {
+    delay[i] = Math.random() * 0.4;
+    swirl[i * 3] = (Math.random() - 0.5) * 220;
+    swirl[i * 3 + 1] = (Math.random() - 0.5) * 220;
+    swirl[i * 3 + 2] = (Math.random() - 0.5) * 220;
+  }
+
+  var geo = new THREE.BufferGeometry();
+  var posAttr = new THREE.BufferAttribute(new Float32Array(cur), 3);
+  var colAttr = new THREE.BufferAttribute(new Float32Array(curC), 3);
+  geo.setAttribute("position", posAttr);
+  geo.setAttribute("color", colAttr);
+  var mat = new THREE.PointsMaterial({
+    size: mobile ? 7 : 6, map: tex, vertexColors: true, transparent: true,
+    opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending, sizeAttenuation: true
+  });
+  var points = new THREE.Points(geo, mat);
+  var group = new THREE.Group();
+  group.add(points);
+  var halo = new THREE.Points(geo, new THREE.PointsMaterial({
+    size: mobile ? 24 : 20, map: tex, vertexColors: true, transparent: true,
+    opacity: 0.11, depthWrite: false, blending: THREE.AdditiveBlending
+  }));
+  group.add(halo);
+  scene.add(group);
+
+  // stars
+  var SN = 450, sp = new Float32Array(SN * 3);
+  for (var s = 0; s < SN; s++) {
+    var u = Math.random() * 6.2832, v = Math.acos(2 * Math.random() - 1), r = 1200 + Math.random() * 900;
+    sp[s * 3] = r * Math.sin(v) * Math.cos(u);
+    sp[s * 3 + 1] = r * Math.cos(v);
+    sp[s * 3 + 2] = r * Math.sin(v) * Math.sin(u);
+  }
+  var sg = new THREE.BufferGeometry();
+  sg.setAttribute("position", new THREE.BufferAttribute(sp, 3));
+  var sm = new THREE.PointsMaterial({
+    size: 9, map: tex, color: 0xffe3ec, transparent: true, opacity: 0.6,
+    depthWrite: false, blending: THREE.AdditiveBlending
+  });
+  var stars = new THREE.Points(sg, sm);
+  scene.add(stars);
+
+  // luzinhas flutuando
+  var MN = mobile ? 120 : 200, mp = new Float32Array(MN * 3), ms = new Float32Array(MN), gv = 0.3;
+  for (var m = 0; m < MN; m++) {
+    mp[m * 3] = (Math.random() - 0.5) * 760;
+    mp[m * 3 + 1] = (Math.random() - 0.5) * 860;
+    mp[m * 3 + 2] = (Math.random() - 0.5) * 500;
+    ms[m] = 12 + Math.random() * 28;
+  }
+  var mg = new THREE.BufferGeometry();
+  mg.setAttribute("position", new THREE.BufferAttribute(mp, 3));
+  scene.add(new THREE.Points(mg, new THREE.PointsMaterial({
+    size: 8, map: tex, color: 0xffb3c8, transparent: true, opacity: 0.55,
+    depthWrite: false, blending: THREE.AdditiveBlending
+  })));
+
+  function resize() {
+    var w = window.innerWidth, h = window.innerHeight, a = w / h;
+    renderer.setSize(w, h);
+    camera.aspect = a;
+    var tan = Math.tan(25 * Math.PI / 180);
+    var d = Math.max(500 / (2 * tan * a), 470 / (2 * tan)) * 1.08;
+    camera.position.set(0, 0, d);
+    camera.updateProjectionMatrix();
+  }
+  window.addEventListener("resize", resize);
+  resize();
+
+  // ---------- morph ----------
+  var DUR = 3.4, swAmp = 1, p = 1, mode = "scatter", t0 = performance.now();
+  function setMode(m) {
+    var prev = mode; mode = m;
+    swAmp = (m === "text" && prev === "heart") ? 2.6 : 1;
+    DUR = m === "text" ? 4.4 : 3.4;
+    if (m === "text") gv = 1;
+    from.set(cur); fromC.set(curC);
+    to = T[m]; toC = C[m]; p = 0;
+    ["heart", "text", "scatter"].forEach(function (k) {
+      document.getElementById(k === "heart" ? "bHeart" : k === "text" ? "bText" : "bScatter")
+        .classList.toggle("on", k === m);
+    });
+  }
+
+  var auto = null;
+  function manual(m) { clearTimeout(auto); setMode(m); }
+  document.getElementById("bHeart").addEventListener("click", function () { manual("heart"); });
+  document.getElementById("bText").addEventListener("click", function () { manual("text"); });
+  document.getElementById("bScatter").addEventListener("click", function () { manual("scatter"); });
+
+  // ---------- drag to rotate ----------
+  var dragging = false, lx = 0, ly = 0, rx = 0, ry = 0, vx = 0, vy = 0, hint = document.getElementById("hint");
+  var el = renderer.domElement;
+  el.addEventListener("pointerdown", function (e) { dragging = true; lx = e.clientX; ly = e.clientY; el.setPointerCapture(e.pointerId); hint.style.opacity = 0; });
+  el.addEventListener("pointermove", function (e) {
+    if (!dragging) return;
+    vy = (e.clientX - lx) * 0.006; vx = (e.clientY - ly) * 0.004;
+    ry += vy; rx = Math.max(-0.7, Math.min(0.7, rx + vx));
+    lx = e.clientX; ly = e.clientY;
+  });
+  function up() { dragging = false; }
+  el.addEventListener("pointerup", up);
+  el.addEventListener("pointercancel", up);
+  setTimeout(function () { hint.style.opacity = 0; }, 7000);
+
+  // ---------- loop ----------
+  function ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+  var last = performance.now();
+  function frame(now) {
+    var dt = Math.min((now - last) / 1000, 0.05); last = now;
+    var t = (now - t0) / 1000;
+
+    if (p < 1) p = Math.min(1, p + dt / DUR);
+    var P = cur, Cc = curC;
+    for (var i = 0; i < N; i++) {
+      var l = (p - delay[i]) / 0.6; l = l < 0 ? 0 : l > 1 ? 1 : l;
+      var e = ease(l), sw = Math.sin(Math.PI * l) * swAmp;
+      var k = i * 3;
+      P[k] = from[k] + (to[k] - from[k]) * e + swirl[k] * sw;
+      P[k + 1] = from[k + 1] + (to[k + 1] - from[k + 1]) * e + swirl[k + 1] * sw;
+      P[k + 2] = from[k + 2] + (to[k + 2] - from[k + 2]) * e + swirl[k + 2] * sw;
+      Cc[k] = fromC[k] + (toC[k] - fromC[k]) * e;
+      Cc[k + 1] = fromC[k + 1] + (toC[k + 1] - fromC[k + 1]) * e;
+      Cc[k + 2] = fromC[k + 2] + (toC[k + 2] - fromC[k + 2]) * e;
+    }
+    posAttr.array.set(P); posAttr.needsUpdate = true;
+    if (mode === "text" && p >= 1) {
+      var ca = colAttr.array, bx = ((t * 150) % 950) - 475;
+      for (var q = 0; q < N; q++) {
+        var dd = (P[q * 3] - bx) / 55, bb = 1 + 1.5 * Math.exp(-dd * dd), qk = q * 3;
+        ca[qk] = Cc[qk] * bb; ca[qk + 1] = Cc[qk + 1] * bb; ca[qk + 2] = Cc[qk + 2] * bb;
+      }
+    } else colAttr.array.set(Cc);
+    colAttr.needsUpdate = true;
+
+    // rotation: spring back to a gentle sway
+    if (!dragging) {
+      ry += (Math.sin(t * 0.35) * 0.18 - ry) * 0.035;
+      rx += (0 - rx) * 0.04;
+    }
+    group.rotation.y = ry; group.rotation.x = rx;
+
+    // heartbeat
+    var sc = 1, glowV = mode === "text" ? 0.5 : 0.28;
+    if (mode === "heart" && p >= 1) {
+      var ph = (t * 1.15) % 1;
+      var pulse = Math.exp(-Math.pow((ph - 0.1) / 0.05, 2)) + 0.6 * Math.exp(-Math.pow((ph - 0.28) / 0.06, 2));
+      sc = 1 + 0.06 * pulse; glowV = 0.45 + 0.5 * Math.min(1, pulse);
+    }
+    group.scale.setScalar(group.scale.x + (sc - group.scale.x) * 0.35);
+    gv += (glowV - gv) * 0.2;
+    document.getElementById("glow").style.opacity = gv;
+
+    stars.rotation.y = t * 0.012;
+    for (var j = 0; j < MN; j++) {
+      mp[j * 3 + 1] += ms[j] * dt;
+      mp[j * 3] += Math.sin(t * 0.8 + j) * 6 * dt;
+      if (mp[j * 3 + 1] > 430) mp[j * 3 + 1] = -430;
+    }
+    mg.attributes.position.needsUpdate = true;
+    sm.opacity = 0.5 + 0.15 * Math.sin(t * 1.3);
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  requestAnimationFrame(frame);
+
+  // sequência: coração, depois a frase
+  setTimeout(function () { setMode("heart"); }, 300);
+  auto = setTimeout(function () { setMode("text"); }, 7500);
+})();
+</script>
+</body>
+</html>
